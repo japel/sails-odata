@@ -2,7 +2,7 @@
   "name": "sails-odata",
   "version": "0.0.1",
   "description": "oData adapter for Sails.js",
-  "main": "odataAdapter.js",
+  "main": "index.js",
   "scripts": {
     "test": "echo \"Adapter should be tested using Sails.js core.\" && exit 1"
   },
