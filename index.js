@@ -1,223 +1,206 @@
 /*---------------------------------------------------------------
-  :: sails-boilerplate
-  -> adapter
----------------------------------------------------------------*/
+ :: sails-odata
+ -> adapter
+ ---------------------------------------------------------------*/
 
-var async = require('async');
+var request = require('request')
+    , _ = require('lodash')
+    , uri;
 
 var adapter = module.exports = {
+    syncable: false,
+    defaults: {
+        port: 3306,
+        host: 'localhost',
+        path: '/api/'
+    },
+    registerCollection: function (collection, cb) {
+        uri = collection.config.host + ':' + collection.config.port + collection.config.path;
+        cb();
+    },
+    create: function (collectionName, values, cb) {
+        request.post({ uri: uri + collectionName, json: values }, fnWrap(cb));
+    },
+    find: function (collectionName, options, cb) {
+        if (options.where && options.where.id) {
+            request({uri: uri + collectionName + '/' + options.where.id, json: {}}, fnWrap(function (err, body) {
+                if (err) cb(err);
+                cb(null, [body]);
+            }));
+        } else {
+            var qs = oDataQueryString(options) || '';
+            request({uri: uri + collectionName + qs, json: {}}, fnWrap(function (err, body) {
+                if (err) cb(err);
+                cb(null, body.d.results);
+            }));
+        }
+    },
+    update: function (collectionName, options, values, cb) {
 
-  // Set to true if this adapter supports (or requires) things like data types, validations, keys, etc.
-  // If true, the schema for models using this adapter will be automatically synced when the server starts.
-  // Not terribly relevant if not using a non-SQL / non-schema-ed data store
-  syncable: false,
-
-  // Including a commitLog config enables transactions in this adapter
-  // Please note that these are not ACID-compliant transactions: 
-  // They guarantee *ISOLATION*, and use a configurable persistent store, so they are *DURABLE* in the face of server crashes.
-  // However there is no scheduled task that rebuild state from a mid-step commit log at server start, so they're not CONSISTENT yet.
-  // and there is still lots of work to do as far as making them ATOMIC (they're not undoable right now)
-  //
-  // However, for the immediate future, they do a great job of preventing race conditions, and are
-  // better than a naive solution.  They add the most value in findOrCreate() and createEach().
-  // 
-  // commitLog: {
-  //  identity: '__default_mongo_transaction',
-  //  adapter: 'sails-mongo'
-  // },
-
-  // Default configuration for collections
-  // (same effect as if these properties were included at the top level of the model definitions)
-  defaults: {
-
-    // For example:
-    // port: 3306,
-    // host: 'localhost'
-
-    // If setting syncable, you should consider the migrate option, 
-    // which allows you to set how the sync will be performed.
-    // It can be overridden globally in an app (config/adapters.js) and on a per-model basis.
-    //
-    // drop   => Drop schema and data, then recreate it
-    // alter  => Drop/add columns as necessary, but try 
-    // safe   => Don't change anything (good for production DBs)
-    migrate: 'alter'
-  },
-
-  // This method runs when a model is initially registered at server start time
-  registerCollection: function(collection, cb) {
-
-    cb();
-  },
-
-
-  // The following methods are optional
-  ////////////////////////////////////////////////////////////
-
-  // Optional hook fired when a model is unregistered, typically at server halt
-  // useful for tearing down remaining open connections, etc.
-  teardown: function(cb) {
-    cb();
-  },
-
-
-  // REQUIRED method if integrating with a schemaful database
-  define: function(collectionName, definition, cb) {
-
-    // Define a new "table" or "collection" schema in the data store
-    cb();
-  },
-  // REQUIRED method if integrating with a schemaful database
-  describe: function(collectionName, cb) {
-
-    // Respond with the schema (attributes) for a collection or table in the data store
-    var attributes = {};
-    cb(null, attributes);
-  },
-  // REQUIRED method if integrating with a schemaful database
-  drop: function(collectionName, cb) {
-    // Drop a "table" or "collection" schema from the data store
-    cb();
-  },
-
-  // Optional override of built-in alter logic
-  // Can be simulated with describe(), define(), and drop(),
-  // but will probably be made much more efficient by an override here
-  // alter: function (collectionName, attributes, cb) { 
-  // Modify the schema of a table or collection in the data store
-  // cb(); 
-  // },
-
-
-  // REQUIRED method if users expect to call Model.create() or any methods
-  create: function(collectionName, values, cb) {
-    // Create a single new model specified by values
-
-    // Respond with error or newly created model instance
-    cb(null, values);
-  },
-
-  // REQUIRED method if users expect to call Model.find(), Model.findAll() or related methods
-  // You're actually supporting find(), findAll(), and other methods here
-  // but the core will take care of supporting all the different usages.
-  // (e.g. if this is a find(), not a findAll(), it will only send back a single model)
-  find: function(collectionName, options, cb) {
-
-    // ** Filter by criteria in options to generate result set
-
-    // Respond with an error or a *list* of models in result set
-    cb(null, []);
-  },
-
-  // REQUIRED method if users expect to call Model.update()
-  update: function(collectionName, options, values, cb) {
-
-    // ** Filter by criteria in options to generate result set
-
-    // Then update all model(s) in the result set
-
-    // Respond with error or a *list* of models that were updated
-    cb();
-  },
-
-  // REQUIRED method if users expect to call Model.destroy()
-  destroy: function(collectionName, options, cb) {
-
-    // ** Filter by criteria in options to generate result set
-
-    // Destroy all model(s) in the result set
-
-    // Return an error or nothing at all
-    cb();
-  },
-
-
-
-  // REQUIRED method if users expect to call Model.stream()
-  stream: function(collectionName, options, stream) {
-    // options is a standard criteria/options object (like in find)
-
-    // stream.write() and stream.end() should be called.
-    // for an example, check out:
-    // https://github.com/balderdashy/sails-dirty/blob/master/DirtyAdapter.js#L247
-
-  }
-
-
-
-  /*
-  **********************************************
-  * Optional overrides
-  **********************************************
-
-  // Optional override of built-in batch create logic for increased efficiency
-  // otherwise, uses create()
-  createEach: function (collectionName, cb) { cb(); },
-
-  // Optional override of built-in findOrCreate logic for increased efficiency
-  // otherwise, uses find() and create()
-  findOrCreate: function (collectionName, cb) { cb(); },
-
-  // Optional override of built-in batch findOrCreate logic for increased efficiency
-  // otherwise, uses findOrCreate()
-  findOrCreateEach: function (collectionName, cb) { cb(); }
-  */
-
-
-  /*
-  **********************************************
-  * Custom methods
-  **********************************************
-
-  ////////////////////////////////////////////////////////////////////////////////////////////////////
-  //
-  // > NOTE:  There are a few gotchas here you should be aware of.
-  //
-  //    + The collectionName argument is always prepended as the first argument.
-  //      This is so you can know which model is requesting the adapter.
-  //
-  //    + All adapter functions are asynchronous, even the completely custom ones,
-  //      and they must always include a callback as the final argument.
-  //      The first argument of callbacks is always an error object.
-  //      For some core methods, Sails.js will add support for .done()/promise usage.
-  //
-  //    + 
-  //
-  ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-  // Any other methods you include will be available on your models
-  foo: function (collectionName, cb) {
-    cb(null,"ok");
-  },
-  bar: function (collectionName, baz, watson, cb) {
-    cb("Failure!");
-  }
-
-
-  // Example success usage:
-
-  Model.foo(function (err, result) {
-    if (err) console.error(err);
-    else console.log(result);
-
-    // outputs: ok
-  })
-
-  // Example error usage:
-
-  Model.bar(235, {test: 'yes'}, function (err, result){
-    if (err) console.error(err);
-    else console.log(result);
-
-    // outputs: Failure!
-  })
-
-  */
-
-
+        if (options.where && options.where.id) {
+            this.request({uri: uri + collectionName + '/' + options.where.id, json: data}, fnWrap(cb));
+        }
+        // TODO: have the ability to perform a mass update given a query.
+    },
+    destroy: function (collectionName, options, cb) {
+        if (options.where && options.where.id) {
+            request.del({uri: uri + collectionName + '/' + options.where.id, json: {}}, fnWrap(cb));
+        }
+        // TODO: have the ability to perform a mass delete given a query.
+    },
+    count: function (collectionName, options, cb) {
+        options.count = true;
+        options.limit = 0;
+        var qs = oDataQueryString(options) || '?$inlinecount=allpages';
+        request({uri: uri + collectionName + qs, json: {}}, fnWrap(function (err, body) {
+            if (err) cb(err);
+            cb(null, body.d.__count);
+        }));
+    }
 };
 
-//////////////                 //////////////////////////////////////////
-////////////// Private Methods //////////////////////////////////////////
-//////////////                 //////////////////////////////////////////
+function fnWrap(next) {
+    return function (err, resp, body) {
+        if (!err && ~~(resp.statusCode / 100) === 2) {
+            next(null, body);
+        } else {
+            var error = {
+                type: 'api',
+                err: err || body && resp.statusCode && resp.statusCode + ": " + (body.Message || body) + " - " + resp.req.method + ": " + resp.req.collection || body && body.Message || resp.statusCode,
+                resp: resp,
+                body: body
+            };
+            next(error);
+        }
+    };
+}
+
+function oDataQueryString(options) {
+    console.log(options);
+    var qs = {
+        $skip: options.skip || 0,
+        $top: options.limit || 25
+    };
+    if (options.where)
+        qs.$filter = oDataFilterString(options.where);
+    if (options.sort) {
+        qs.$orderby = options.sort.replace(/(\s[a-zA-Z]+)$/, function ($0) {
+            return $0.toLowerCase();
+        });
+    }
+    if (options.count)
+        qs.$inlinecount = 'allpages';
+    // The querystring builder that converts an object will replace dollar signs '$' with '%24' which will cause 
+    // problems. We don't want that so we simply build a string to return.
+    var queryArr = [];
+    for (var key in qs) {
+        if (qs[key] !== undefined && qs[key] !== null)
+            queryArr.push(key + '=' + qs[key]);
+    }
+    var querystring = "?" + queryArr.join('&');
+    console.log(querystring);
+    return querystring;
+}
+
+var operators = {
+    'and': function (value) {
+        var tmpArr = [];
+        _.forEach(value, function (val) {
+            tmpArr.push(oDataFilterString(val));
+        });
+        return '(' + tmpArr.join(' and ') + ')';
+    },
+    'or': function (value) {
+        var tmpArr = [];
+        _.forEach(value, function (val) {
+            tmpArr.push(oDataFilterString(val));
+        });
+        return '(' + tmpArr.join(' or ') + ')';
+    },
+    '!': function (value,key) {
+        this.not(value,key);
+    },
+    'not': function (value,key) {
+        if(_.isString(escapeValue(value)))
+            return key + ' ne ' + escapeValue(value);
+        return 'not (' + oDataFilterString(value) + ')'
+    },
+    'like': function (value, key) {
+        return this.contains(value, key);
+    },
+    '<': function (value, key) {
+        return key + 'lt ' + escapeValue(value);
+    },
+    '>': function (value, key) {
+        return key + 'gt ' + escapeValue(value);
+    },
+    '<=': function (value, key) {
+        return key + 'le ' + escapeValue(value);
+    },
+    '>=': function (value, key) {
+        return key + 'ge ' + escapeValue(value);
+    },
+    '=':function(value,key){
+        return key + ' eq ' + escapeValue(value);
+    },
+    'startsWith': function (value, key) {
+        return 'startswith(' + key + ', ' + escapeValue(value) + ') eq true';
+    },
+    'endsWith': function (value, key) {
+        return 'endswith(' + key + ', ' + escapeValue(value) + ') eq true';
+    },
+    'contains': function (value, key) {
+        return 'substringof(' + escapeValue(value) + ', ' + key + ') eq true';
+    },
+    'field': function (v, k) {
+        var tmpArr = [];
+        if (_.isObject(v)) {
+            tmpArr = [];
+            _.forIn(v, function (value, key) {
+                tmpArr.push((operators[key] || operators.field)(value, k));
+            });
+            return operators.or(tmpArr);
+        } else if (_.isArray(filter)) {
+            tmpArr = [];
+            _.forEach(v, function (value) {
+                tmpArr.push(operators['='](value, k));
+            });
+            return operators.or(tmpArr);
+        }else{
+            return operators['='](v, k);
+        }
+    }
+};
+
+function escapeValue(value){
+    value = parseValue(value);
+    if (_.isString(value))
+        return "'" + value + "'";
+    return value;
+}
+
+function parseValue(value) {
+    if (!_.isNaN(Date.parse(value)))
+        return Date(value);
+    else if (value === "false")
+        return false;
+    else if (value === "true")
+        return true;
+    else if (/^-?([0-9]*(\.[0-9]+)?|Infinity)$/.test(value) && !_.isNaN(_.parseInt(value)))
+        return _.parseInt(value);
+    else
+        return value;
+}
+
+function oDataFilterString(filter) {
+    if (_.isObject(filter)) {
+        var filterString = "";
+        _.forIn(filter, function (value, key) {
+            filterString += (operators[key] || operators.field)(value, key);
+        });
+        return filterString;
+    } else if (_.isArray(filter)) {
+        return operators.or(filter); // not sure if filter will ever be an array here...
+    } else
+        return filter;
+}
