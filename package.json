@@ -22,6 +22,8 @@
   "license": "MIT",
   "readmeFilename": "README.md",
   "dependencies": {
-    "async": "0.1.22"
+    "async": "0.1.22",
+    "request": "2.30.0",
+    "lodash": "2.4.1"
   }
 }
